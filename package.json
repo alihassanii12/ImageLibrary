@@ -3,11 +3,13 @@
   "version": "1.0.0",
   "description": "",
   "main": "server.js",          
+ 
   "scripts": {
     "dev": "nodemon server.js",
-    "start": "node server.js",   
-    "vercel-build": "echo Building..."
+    "start": "node server.js",
+    "vercel-build": "echo 'Building...'"
   },
+
   "keywords": [],
   "author": "",
   "license": "ISC",
