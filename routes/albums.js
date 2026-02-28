@@ -6,6 +6,57 @@ import isAuth from '../middleware/isAuth.js';
 
 const router = express.Router();
 
+// ==================== MONGODB CONNECTION CACHING ====================
+// Serverless ke liye global connection cache
+let cached = global.mongoose;
+
+if (!cached) {
+  cached = global.mongoose = { conn: null, promise: null };
+}
+
+async function connectDB() {
+  if (cached.conn) {
+    console.log('✅ [Albums] Using existing MongoDB connection');
+    return cached.conn;
+  }
+
+  if (!cached.promise) {
+    console.log('🔄 [Albums] Creating new MongoDB connection...');
+    const opts = {
+      bufferCommands: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    };
+    
+    cached.promise = mongoose.connect(process.env.MONGO_URI, opts)
+      .then(mongoose => {
+        console.log('✅ [Albums] MongoDB connected successfully');
+        return mongoose;
+      })
+      .catch(err => {
+        console.error('❌ [Albums] MongoDB connection error:', err.message);
+        cached.promise = null;
+        throw err;
+      });
+  }
+  
+  cached.conn = await cached.promise;
+  return cached.conn;
+}
+
+// ==================== MIDDLEWARE ====================
+// Har request se pehle database connect karo
+router.use(async (req, res, next) => {
+  try {
+    await connectDB();
+    next();
+  } catch (err) {
+    console.error('❌ [Albums] Database connection failed:', err.message);
+    res.status(500).json({ error: 'Database connection failed' });
+  }
+});
+
 // Helper function to update album cover
 const updateAlbumCover = async (albumId) => {
   try {
@@ -30,10 +81,6 @@ const updateAlbumCover = async (albumId) => {
 // ==================== CREATE ALBUM/FOLDER ====================
 router.post('/create', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { name, description, category, parentAlbumId, isFolder } = req.body;
 
         if (!name) {
@@ -73,13 +120,9 @@ router.post('/create', isAuth, async (req, res) => {
     }
 });
 
-// ==================== GET ALL ALBUMS (THIS IS THE MISSING ROUTE) ====================
+// ==================== GET ALL ALBUMS ====================
 router.get('/all', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         console.log('📁 Fetching all albums for user:', req.user.id);
 
         const albums = await Album.find({ userId: req.user.id })
@@ -101,10 +144,6 @@ router.get('/all', isAuth, async (req, res) => {
 // ==================== GET ALBUMS/FOLDERS BY PARENT ====================
 router.get('/', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { parentId } = req.query;
         
         let query = { userId: req.user.id };
@@ -134,10 +173,6 @@ router.get('/', isAuth, async (req, res) => {
 // ==================== GET SINGLE ALBUM ====================
 router.get('/:albumId', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId } = req.params;
 
         if (!mongoose.Types.ObjectId.isValid(albumId)) {
@@ -166,10 +201,6 @@ router.get('/:albumId', isAuth, async (req, res) => {
 // ==================== GET CHILDREN OF A FOLDER ====================
 router.get('/:albumId/children', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId } = req.params;
 
         if (!mongoose.Types.ObjectId.isValid(albumId)) {
@@ -203,10 +234,6 @@ router.get('/:albumId/children', isAuth, async (req, res) => {
 // ==================== GET ALBUM PATH ====================
 router.get('/:albumId/path', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId } = req.params;
 
         if (!mongoose.Types.ObjectId.isValid(albumId)) {
@@ -243,10 +270,6 @@ router.get('/:albumId/path', isAuth, async (req, res) => {
 // ==================== GET ALBUMS BY USER ID ====================
 router.get('/user/:userId', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { userId } = req.params;
 
         const numericUserId = Number(userId);
@@ -276,10 +299,6 @@ router.get('/user/:userId', isAuth, async (req, res) => {
 // ==================== ADD MEDIA TO ALBUM ====================
 router.post('/:albumId/add-media', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId } = req.params;
         const { mediaId } = req.body;
 
@@ -332,10 +351,6 @@ router.post('/:albumId/add-media', isAuth, async (req, res) => {
 // ==================== REMOVE MEDIA FROM ALBUM ====================
 router.delete('/:albumId/remove-media/:mediaId', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId, mediaId } = req.params;
 
         if (!mongoose.Types.ObjectId.isValid(albumId) || !mongoose.Types.ObjectId.isValid(mediaId)) {
@@ -377,10 +392,6 @@ router.delete('/:albumId/remove-media/:mediaId', isAuth, async (req, res) => {
 // ==================== MOVE MEDIA TO ALBUM/FOLDER ====================
 router.post('/move-media', isAuth, async (req, res) => {
   try {
-    if (mongoose.connection.readyState !== 1) {
-      return res.status(500).json({ error: "Database connection error" });
-    }
-
     const { mediaId, targetAlbumId } = req.body;
 
     console.log('📁 Move media request:', { mediaId, targetAlbumId });
@@ -493,10 +504,6 @@ router.post('/move-media', isAuth, async (req, res) => {
 // ==================== UPDATE ALBUM ====================
 router.put('/:albumId', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId } = req.params;
         const { name, description, category, coverUrl } = req.body;
 
@@ -530,10 +537,6 @@ router.put('/:albumId', isAuth, async (req, res) => {
 // ==================== MOVE ALBUM ====================
 router.put('/:albumId/move', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId } = req.params;
         const { newParentId } = req.body;
 
@@ -588,10 +591,6 @@ router.put('/:albumId/move', isAuth, async (req, res) => {
 // ==================== DELETE ALBUM ====================
 router.delete('/:albumId', isAuth, async (req, res) => {
     try {
-        if (mongoose.connection.readyState !== 1) {
-            return res.status(500).json({ error: "Database connection error" });
-        }
-
         const { albumId } = req.params;
 
         if (!mongoose.Types.ObjectId.isValid(albumId)) {
