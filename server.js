@@ -25,7 +25,7 @@ events.defaultMaxListeners = 20;
 // Middleware
 app.use(cookieParser());
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001", "https://*.vercel.app"], // Add vercel domain
+  origin: ["http://localhost:3000", "http://localhost:3001"],
   credentials: true
 }));
 app.use(express.json());
@@ -44,34 +44,41 @@ const pgPool = new Pool({
   database: process.env.PG_DB,
   password: process.env.PG_PASSWORD,
   port: Number(process.env.PG_PORT),
-  ssl: {
-    rejectUnauthorized: false
-  }
+  ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false
 });
 app.locals.pgPool = pgPool;
 
-// MongoDB Connection with better error handling
+// MongoDB Connection
 const connectMongoDB = async () => {
   try {
     await mongoose.connect(process.env.MONGO_URI);
     console.log('✅ MongoDB connected successfully');
-    
-    mongoose.connection.on('error', (err) => {
-      console.error('MongoDB connection error:', err);
-    });
-    
-    mongoose.connection.on('disconnected', () => {
-      console.log('MongoDB disconnected');
-    });
-    
   } catch (err) {
-    console.error('❌ MongoDB connection error:', err);
-    process.exit(1);
+    console.error('❌ MongoDB connection error:', err.message);
   }
 };
 
-// Don't await here, do it in the request handler or use connection caching
 connectMongoDB();
+
+// Root route
+app.get('/', (req, res) => {
+  res.json({ 
+    message: 'Image Library API',
+    status: 'running',
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    endpoints: ['/health', '/auth', '/media', '/albums', '/google', '/forgotPassword', '/delete-account', '/support', '/locked']
+  });
+});
+
+// Health check endpoint
+app.get('/health', (req, res) => {
+  res.json({ 
+    status: 'OK', 
+    timestamp: new Date().toISOString(),
+    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected',
+    postgres: 'connected'
+  });
+});
 
 // Routes
 app.use('/auth', authRoutes);
@@ -83,15 +90,6 @@ app.use('/delete-account', deleteAccountRouter);
 app.use('/support', supportRouter);
 app.use('/locked', lockedRoutes);
 
-// Health check endpoint
-app.get('/health', (req, res) => {
-  res.json({ 
-    status: 'OK', 
-    timestamp: new Date().toISOString(),
-    mongodb: mongoose.connection.readyState === 1 ? 'connected' : 'disconnected'
-  });
-});
-
 // 404 handler
 app.use((req, res) => {
   res.status(404).json({ error: 'Route not found' });
@@ -99,25 +97,9 @@ app.use((req, res) => {
 
 // Global error handler
 app.use((err, req, res, next) => {
-  console.error('🔥 Unhandled error:', {
-    timestamp: new Date().toISOString(),
-    url: req.url,
-    method: req.method,
-    error: {
-      message: err.message,
-      stack: err.stack,
-      name: err.name
-    }
-  });
-  
-  res.status(500).json({ 
-    error: err.message || 'Internal server error'
-  });
+  console.error('🔥 Error:', err.message);
+  res.status(500).json({ error: err.message || 'Internal server error' });
 });
 
-// ❌ REMOVE THIS LINE:
-// const PORT = process.env.PORT || 5000;
-// app.listen(PORT, () => console.log(`🚀 Server running on port ${PORT}`));
-
-// ✅ ADD THIS LINE FOR VERCEL:
+// ✅ Export for Vercel
 export default app;
