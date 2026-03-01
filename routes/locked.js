@@ -1,5 +1,5 @@
 import express from "express";
-import bcrypt from 'bcrypt';
+import bcrypt from 'bcryptjs';
 import mongoose from 'mongoose';
 import isAuth from "../middleware/isAuth.js";
 import LockedFolder from "../models/lockedFolder.js";
