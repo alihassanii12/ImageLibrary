@@ -81,18 +81,32 @@ export const getPostgresPool = async () => {
         throw new Error(`Missing PostgreSQL environment variables: ${missing.join(', ')}`);
       }
 
+      console.log('📊 PostgreSQL Config:', {
+        host: process.env.PG_HOST,
+        database: process.env.PG_DB,
+        user: process.env.PG_USER,
+        port: process.env.PG_PORT,
+        ssl: process.env.NODE_ENV === 'production'
+      });
+
+      // ✅ OPTIMIZED FOR SERVERLESS (Neon.tech)
       const pool = new Pool({
         user: process.env.PG_USER,
         host: process.env.PG_HOST,
         database: process.env.PG_DB,
         password: process.env.PG_PASSWORD,
         port: Number(process.env.PG_PORT),
-        ssl: process.env.NODE_ENV === 'production' ? { rejectUnauthorized: false } : false,
-        max: 5,
-        min: 1,
-        idleTimeoutMillis: 10000,
-        connectionTimeoutMillis: 5000,
-        maxUses: 7500,
+        ssl: process.env.NODE_ENV === 'production' ? { 
+          rejectUnauthorized: false,
+          sslmode: 'require'
+        } : false,
+        // ✅ Serverless optimized settings
+        max: 3,                    // Max connections (reduce from 5)
+        min: 0,                     // Min connections (allow 0 idle)
+        idleTimeoutMillis: 3000,    // Close idle connections faster (3 sec)
+        connectionTimeoutMillis: 3000, // Connection timeout
+        maxUses: 3000,              // Reconnect after 3000 queries
+        allowExitOnIdle: true,      // Allow pool to exit when idle
       });
 
       pool.on('error', (err) => {
@@ -101,20 +115,44 @@ export const getPostgresPool = async () => {
         poolPromise = null;
       });
 
-      // Test connection
+      pool.on('connect', () => {
+        console.log('🔌 PostgreSQL client connected');
+      });
+
+      pool.on('remove', () => {
+        console.log('🔌 PostgreSQL client removed');
+      });
+
+      // Test connection - but don't keep it open
       pool.connect((err, client, done) => {
         if (err) {
           console.error('❌ PostgreSQL connection test failed:', err);
+          console.error('Connection details:', {
+            host: process.env.PG_HOST,
+            database: process.env.PG_DB,
+            user: process.env.PG_USER,
+            port: process.env.PG_PORT
+          });
           poolPromise = null;
           reject(err);
         } else {
-          console.log('✅ PostgreSQL pool created and tested');
-          done();
-          pgPool = pool;
-          resolve(pool);
+          console.log('✅ PostgreSQL pool created and tested successfully');
+          
+          // Test query
+          client.query('SELECT NOW()', (queryErr, result) => {
+            if (queryErr) {
+              console.error('❌ Test query failed:', queryErr);
+            } else {
+              console.log('✅ Test query successful:', result.rows[0].now);
+            }
+            done(); // Release client immediately
+            pgPool = pool;
+            resolve(pool);
+          });
         }
       });
     } catch (err) {
+      console.error('❌ Error creating pool:', err);
       poolPromise = null;
       reject(err);
     }
