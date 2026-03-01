@@ -21,23 +21,30 @@ const app = express();
 
 // ==================== MIDDLEWARE ====================
 app.use(cookieParser());
+
+// ✅ FIXED CORS - removed trailing slash from URL
 app.use(cors({
-  origin: ["http://localhost:3000", "http://localhost:3001","https://imagelibraryfrontendapp.vercel.app/", "https://*.vercel.app"],
+  origin: [
+    "http://localhost:3000", 
+    "http://localhost:3001",
+    "https://imagelibraryfrontendapp.vercel.app", // ⚠️ Removed trailing slash
+    "https://*.vercel.app"
+  ],
   credentials: true
 }));
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-// Request logging (optional - remove in production if too noisy)
+// Request logging
 app.use((req, res, next) => {
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.url}`);
   next();
 });
 
-// Database connection middleware (attaches connections to req)
+// Database connection middleware
 app.use(async (req, res, next) => {
   try {
-    // Attach PostgreSQL pool to request (cached for serverless)
     req.pgPool = await getPostgresPool();
     next();
   } catch (err) {
@@ -63,7 +70,6 @@ app.get('/health', async (req, res) => {
   };
   
   try {
-    // Check PostgreSQL
     const pgPool = await getPostgresPool();
     const pgClient = await pgPool.connect();
     await pgClient.query('SELECT 1');
@@ -74,11 +80,9 @@ app.get('/health', async (req, res) => {
   }
   
   try {
-    // Check MongoDB
     if (mongoose.connection.readyState === 1) {
       status.mongodb = 'connected';
     } else {
-      // Try to connect if not connected
       await connectMongoDB();
       status.mongodb = 'connected';
     }
