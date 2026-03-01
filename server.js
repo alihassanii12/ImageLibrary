@@ -27,7 +27,7 @@ app.use(cors({
   origin: [
     "http://localhost:3000", 
     "http://localhost:3001",
-    "https://imagelibraryfrontendapp.vercel.app", // ⚠️ Removed trailing slash
+    "https://image-library-frontend.vercel.app",
     "https://*.vercel.app"
   ],
   credentials: true
